@@ -1,0 +1,9 @@
+// Local signing and bundle ID for this checkout.
+// See README.md → "Configure Xcode signing".
+#include? "MacTrack.local.xcconfig"
+
+// Apple Developer Team ID (10 characters), or leave empty to use personal / ad-hoc signing.
+DEVELOPMENT_TEAM =
+
+// Must be unique on your Mac; reverse-DNS style, e.g. com.yourname.MactrackTime
+PRODUCT_BUNDLE_IDENTIFIER = com.example.MactrackTime
