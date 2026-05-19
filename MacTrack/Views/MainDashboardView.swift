@@ -14,10 +14,8 @@ struct MainDashboardView: View {
             .frostedGlassContent()
         } detail: {
             switch appState.selectedTab {
-            case .today:
-                TodayView()
-            case .untracked:
-                UntrackedTimelineView()
+            case .overview:
+                OverviewView()
             case .projects:
                 ProjectsSettingsView()
             case .settings:
