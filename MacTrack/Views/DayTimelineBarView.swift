@@ -159,9 +159,28 @@ struct DayTimelineBarView: View {
             if total > 0 {
                 let x = CGFloat(start.timeIntervalSince(dayStart) / total) * width
                 let w = CGFloat(end.timeIntervalSince(start) / total) * width
-                selectionHighlightRect(x: x, width: max(4, w), height: overlayHeight, yInset: inset)
+                let rectWidth = max(4, w)
+                selectionHighlightRect(x: x, width: rectWidth, height: overlayHeight, yInset: inset)
+                selectionDurationLabel(
+                    duration: end.timeIntervalSince(start),
+                    centerX: x + rectWidth / 2,
+                    barTopY: inset
+                )
             }
         }
+    }
+
+    private func selectionDurationLabel(duration: TimeInterval, centerX: CGFloat, barTopY: CGFloat) -> some View {
+        Text(DurationFormatting.short(duration))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+            .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+            .fixedSize()
+            .position(x: centerX, y: barTopY - 17)
+            .allowsHitTesting(false)
     }
 
     private func selectionHighlight(for slice: TimelineSlice, width: CGFloat, height: CGFloat, yInset: CGFloat) -> some View {
