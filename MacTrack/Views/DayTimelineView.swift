@@ -210,18 +210,22 @@ struct DayTimelineSection: View {
     }
 
     private func assignSelection(start: Date, end: Date, project: Project?) {
+        let selectionStart = min(start, end)
+        let selectionEnd = max(start, end)
+        guard selectionEnd > selectionStart else { return }
+
         let targets: [TimelineSlice]
         if !selectedSliceIDs.isEmpty {
             targets = slices.filter { selectedSliceIDs.contains($0.id) }
         } else {
-            targets = slices.filter { $0.end > start && $0.start < end }
+            targets = slices.filter { $0.end > selectionStart && $0.start < selectionEnd }
         }
         for slice in targets {
             let rangeStart: Date
             let rangeEnd: Date
             if selectedSliceIDs.isEmpty {
-                rangeStart = max(start, slice.start)
-                rangeEnd = min(end, slice.end)
+                rangeStart = max(selectionStart, slice.start)
+                rangeEnd = min(selectionEnd, slice.end)
             } else {
                 rangeStart = slice.start
                 rangeEnd = slice.end
@@ -241,8 +245,38 @@ struct DayTimelineSection: View {
                 )
             }
         }
-        selectionStart = nil
-        selectionEnd = nil
+
+        if let project, selectedSliceIDs.isEmpty {
+            let covered = targets.map { (max(selectionStart, $0.start), min(selectionEnd, $0.end)) }
+            for gap in gapIntervals(selectionStart: selectionStart, selectionEnd: selectionEnd, covered: covered) {
+                trackingEngine.createManualSegment(start: gap.start, end: gap.end, project: project)
+            }
+        }
+
+        self.selectionStart = nil
+        self.selectionEnd = nil
         selectedSliceIDs = []
+    }
+
+    private func gapIntervals(
+        selectionStart: Date,
+        selectionEnd: Date,
+        covered: [(Date, Date)]
+    ) -> [(start: Date, end: Date)] {
+        var gaps: [(start: Date, end: Date)] = []
+        var cursor = selectionStart
+        for interval in covered.sorted(by: { $0.0 < $1.0 }) {
+            let intervalStart = interval.0
+            let intervalEnd = interval.1
+            guard intervalEnd > intervalStart else { continue }
+            if intervalStart > cursor {
+                gaps.append((start: cursor, end: intervalStart))
+            }
+            cursor = max(cursor, intervalEnd)
+        }
+        if cursor < selectionEnd {
+            gaps.append((start: cursor, end: selectionEnd))
+        }
+        return gaps
     }
 }

@@ -8,6 +8,8 @@ enum AssignmentSource: String, Codable {
 
 @Model
 final class TimeSegment {
+    static let manualAppName = "Manual"
+
     var id: UUID
     var startDate: Date
     var endDate: Date?
@@ -30,6 +32,13 @@ final class TimeSegment {
     }
 
     var isUntracked: Bool { projectID == nil }
+
+    /// Gap-filled timeline entry (no real app/window), not a manually reassigned slice of tracked time.
+    var isStandaloneManualEntry: Bool {
+        assignmentSource == .manual
+            && bundleIdentifier.isEmpty
+            && appName == Self.manualAppName
+    }
 
     init(
         startDate: Date = Date(),

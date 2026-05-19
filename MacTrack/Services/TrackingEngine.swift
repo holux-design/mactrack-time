@@ -71,6 +71,7 @@ final class TrackingEngine: ObservableObject {
 
         if let active = activeSegment,
            active.bundleIdentifier == window.bundleIdentifier {
+            cancelPendingSwitch()
             openSegment(for: window)
             return
         }
@@ -81,16 +82,7 @@ final class TrackingEngine: ObservableObject {
             return
         }
 
-        pendingWindow = window
-        cancelPendingSwitch()
-        switchDebounceTimer = Timer.scheduledTimer(withTimeInterval: debounce, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.commitPendingSwitch()
-            }
-        }
-        if let timer = switchDebounceTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        schedulePendingSwitch(to: window, debounce: debounce)
     }
 
     func resyncCurrentWindow() {
@@ -108,6 +100,21 @@ final class TrackingEngine: ObservableObject {
             segment.projectID = project.id
             segment.assignmentSource = .manual
         }
+        save()
+    }
+
+    func createManualSegment(start: Date, end: Date, project: Project) {
+        guard end > start else { return }
+        let segment = TimeSegment(
+            startDate: start,
+            projectID: project.id,
+            windowTitle: "",
+            appName: TimeSegment.manualAppName,
+            bundleIdentifier: "",
+            assignmentSource: .manual
+        )
+        segment.endDate = end
+        modelContext.insert(segment)
         save()
     }
 
@@ -130,12 +137,63 @@ final class TrackingEngine: ObservableObject {
         rangeStart: Date,
         rangeEnd: Date
     ) {
+        if segment.isStandaloneManualEntry {
+            removeStandaloneManual(segment: segment, rangeStart: rangeStart, rangeEnd: rangeEnd)
+            return
+        }
         splitAndSetProject(
             segment: segment,
             rangeStart: rangeStart,
             rangeEnd: rangeEnd,
             projectID: nil
         )
+    }
+
+    private func removeStandaloneManual(
+        segment: TimeSegment,
+        rangeStart: Date,
+        rangeEnd: Date
+    ) {
+        let segStart = segment.startDate
+        let segEnd = segment.endDate ?? Date()
+        let removeStart = max(rangeStart, segStart)
+        let removeEnd = min(rangeEnd, segEnd)
+        guard removeEnd > removeStart else { return }
+
+        let projectID = segment.projectID
+
+        if segment === activeSegment {
+            closeActiveSegment(at: segEnd)
+        }
+        modelContext.delete(segment)
+
+        if removeStart > segStart, let projectID {
+            let before = TimeSegment(
+                startDate: segStart,
+                projectID: projectID,
+                windowTitle: "",
+                appName: TimeSegment.manualAppName,
+                bundleIdentifier: "",
+                assignmentSource: .manual
+            )
+            before.endDate = removeStart
+            modelContext.insert(before)
+        }
+
+        if removeEnd < segEnd, let projectID {
+            let after = TimeSegment(
+                startDate: removeEnd,
+                projectID: projectID,
+                windowTitle: "",
+                appName: TimeSegment.manualAppName,
+                bundleIdentifier: "",
+                assignmentSource: .manual
+            )
+            after.endDate = segEnd
+            modelContext.insert(after)
+        }
+
+        save()
     }
 
     private func splitAndSetProject(
@@ -203,10 +261,30 @@ final class TrackingEngine: ObservableObject {
         save()
     }
 
+    private func schedulePendingSwitch(to window: FocusedWindowInfo, debounce: TimeInterval) {
+        cancelPendingSwitch()
+        pendingWindow = window
+        switchDebounceTimer = Timer.scheduledTimer(withTimeInterval: debounce, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.commitPendingSwitch()
+            }
+        }
+        if let timer = switchDebounceTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
     private func commitPendingSwitch() {
         guard let window = pendingWindow else { return }
         pendingWindow = nil
         switchDebounceTimer = nil
+
+        guard isTracking else { return }
+        guard !AppIdentity.isSelfApp(bundleIdentifier: window.bundleIdentifier) else { return }
+
+        let current = focusTracker.currentWindow
+        guard current.bundleIdentifier == window.bundleIdentifier else { return }
+
         openSegment(for: window)
     }
 
@@ -216,7 +294,7 @@ final class TrackingEngine: ObservableObject {
         pendingWindow = nil
     }
 
-    private func openSegment(for window: FocusedWindowInfo) {
+    private func openSegment(for window: FocusedWindowInfo, startDate: Date = Date()) {
         guard !AppIdentity.isSelfApp(bundleIdentifier: window.bundleIdentifier) else { return }
 
         let projects = fetchProjects()
@@ -248,9 +326,10 @@ final class TrackingEngine: ObservableObject {
             return
         }
 
-        closeActiveSegment()
+        closeActiveSegment(at: startDate)
 
         let segment = TimeSegment(
+            startDate: startDate,
             projectID: projectID,
             windowTitle: resolvedTitle,
             appName: window.appName,
