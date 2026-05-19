@@ -3,11 +3,10 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var selectedTab: MainTab = .today
+    @Published var selectedTab: MainTab = .overview
 
     enum MainTab: String, CaseIterable, Identifiable {
-        case today
-        case untracked
+        case overview
         case projects
         case settings
 
@@ -15,8 +14,7 @@ final class AppState: ObservableObject {
 
         var title: String {
             switch self {
-            case .today: "Today"
-            case .untracked: "Untracked"
+            case .overview: "Overview"
             case .projects: "Projects"
             case .settings: "Settings"
             }
@@ -24,8 +22,7 @@ final class AppState: ObservableObject {
 
         var icon: String {
             switch self {
-            case .today: "chart.bar.fill"
-            case .untracked: "timeline.selection"
+            case .overview: "chart.bar.fill"
             case .projects: "folder.fill"
             case .settings: "gearshape.fill"
             }

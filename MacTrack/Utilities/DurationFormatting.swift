@@ -14,6 +14,16 @@ enum DurationFormatting {
         return "\(max(1, total))s"
     }
 
+    static func tile(_ interval: TimeInterval) -> String {
+        let total = Int(interval)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 && minutes > 0 { return "\(hours)h \(minutes)min" }
+        if hours > 0 { return "\(hours)h" }
+        if minutes > 0 { return "\(minutes)min" }
+        return "< 1min"
+    }
+
     static func clock(_ interval: TimeInterval) -> String {
         let total = Int(interval)
         let hours = total / 3600
