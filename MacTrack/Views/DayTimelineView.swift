@@ -13,6 +13,7 @@ struct DayTimelineView: View {
     @State private var viewport = TimelineViewport()
     @State private var optionPanStartOffset: CGFloat?
     @State private var didApplyDefaultViewport = false
+    @State private var hoveredSliceID: UUID?
 
     init(
         slices: [TimelineSlice],
@@ -79,6 +80,12 @@ struct DayTimelineView: View {
             }
             .frame(width: viewportWidth, alignment: .leading)
             .clipped()
+            .overlay(alignment: .topLeading) {
+                if let id = hoveredSliceID,
+                   let slice = slices.first(where: { $0.id == id }) {
+                    sliceTooltip(for: slice, contentWidth: contentWidth, viewportWidth: viewportWidth)
+                }
+            }
             .timelineScrollWheel(viewport: $viewport)
             .simultaneousGesture(optionPanGesture(viewportWidth: viewportWidth))
             .onChange(of: geo.size.width) { _, newWidth in
@@ -156,7 +163,9 @@ struct DayTimelineView: View {
                 }
                 .frame(width: blockWidth, height: 24)
                 .offset(x: frame.minX + appBlockGap / 2, y: 2)
-                .help(helpText(for: slice))
+                .onHover { isHovering in
+                    hoveredSliceID = isHovering ? slice.id : (hoveredSliceID == slice.id ? nil : hoveredSliceID)
+                }
             }
         }
         .frame(height: 28)
@@ -181,6 +190,33 @@ struct DayTimelineView: View {
     private func helpText(for slice: TimelineSlice) -> String {
         let title = slice.segment.windowTitle.isEmpty ? slice.segment.appName : slice.segment.windowTitle
         return "\(title) · \(DurationFormatting.short(slice.duration))"
+    }
+
+    private func sliceTooltip(for slice: TimelineSlice, contentWidth: CGFloat, viewportWidth: CGFloat) -> some View {
+        let frame = frameFor(slice: slice, contentWidth: contentWidth)
+        let blockWidth = max(18, frame.width - appBlockGap)
+        let centerX = frame.minX + appBlockGap / 2 + blockWidth / 2 - viewport.scrollOffset
+        let clampedX = max(60, min(viewportWidth - 60, centerX))
+        // App icons row top is at y=34 (28pt markers + 6pt spacing); tooltip sits just below at y=66
+        let tooltipY: CGFloat = 66
+
+        return VStack(alignment: .leading, spacing: 2) {
+            if !slice.segment.windowTitle.isEmpty {
+                Text(slice.segment.windowTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+            }
+            Text(slice.segment.appName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .fixedSize()
+        .position(x: clampedX, y: tooltipY)
+        .allowsHitTesting(false)
     }
 }
 
