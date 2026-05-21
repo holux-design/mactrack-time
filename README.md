@@ -1,5 +1,7 @@
 # Mactrack Time
 
+![MacTrack Time](img/Wallpaper.png)
+
 A macOS menu bar app that tracks how you spend time across apps and windows, and assigns it to projects using keyword rules.
 
 ## Requirements
