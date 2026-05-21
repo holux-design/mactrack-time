@@ -15,6 +15,7 @@ final class TimeSegment {
     var endDate: Date?
     var projectID: UUID?
     var windowTitle: String
+    var url: String
     var appName: String
     var bundleIdentifier: String
     var assignmentSourceRaw: String
@@ -44,6 +45,7 @@ final class TimeSegment {
         startDate: Date = Date(),
         projectID: UUID? = nil,
         windowTitle: String = "",
+        url: String = "",
         appName: String = "",
         bundleIdentifier: String = "",
         assignmentSource: AssignmentSource = .automatic
@@ -53,6 +55,7 @@ final class TimeSegment {
         self.endDate = nil
         self.projectID = projectID
         self.windowTitle = windowTitle
+        self.url = url
         self.appName = appName
         self.bundleIdentifier = bundleIdentifier
         self.assignmentSourceRaw = assignmentSource.rawValue

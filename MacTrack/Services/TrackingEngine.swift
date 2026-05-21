@@ -349,6 +349,7 @@ final class TrackingEngine: ObservableObject {
             startDate: startDate,
             projectID: projectID,
             windowTitle: resolvedTitle,
+            url: window.url,
             appName: window.appName,
             bundleIdentifier: window.bundleIdentifier,
             assignmentSource: .automatic

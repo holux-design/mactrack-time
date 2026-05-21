@@ -67,6 +67,26 @@ enum AccessibilityWindowReader {
         return false
     }
 
+    // MARK: - Known browsers
+
+    static let browserBundleIDs: Set<String> = [
+        "com.apple.Safari",
+        "com.apple.SafariTechnologyPreview",
+        "com.google.Chrome",
+        "com.google.Chrome.canary",
+        "company.thebrowser.Browser",   // Arc
+        "org.mozilla.firefox",
+        "com.brave.Browser",
+        "com.microsoft.edgemac",
+        "com.vivaldi.Vivaldi",
+        "com.operasoftware.Opera",
+        "org.chromium.Chromium",
+    ]
+
+    static func isBrowser(bundleID: String) -> Bool {
+        browserBundleIDs.contains(bundleID)
+    }
+
     static func focusedWindow(for app: NSRunningApplication) -> FocusedWindowInfo {
         let appName = app.localizedName ?? ""
         let bundleID = app.bundleIdentifier ?? ""
@@ -80,11 +100,67 @@ enum AccessibilityWindowReader {
             title = titleViaWindowList(pid: pid)
         }
 
+        var url = ""
+        if isTrusted, isBrowser(bundleID: bundleID) {
+            url = extractBrowserURL(pid: pid)
+        }
+
+        // For Electron/web apps with empty titles, try reading the web area title
+        if title.isEmpty, isTrusted {
+            title = webAreaTitle(pid: pid)
+        }
+
+
         return FocusedWindowInfo(
             appName: appName,
             bundleIdentifier: bundleID,
-            windowTitle: title
+            windowTitle: title,
+            url: url
         )
+    }
+
+    // MARK: - Browser URL extraction
+
+    private static func extractBrowserURL(pid: pid_t) -> String {
+        let appElement = AXUIElementCreateApplication(pid)
+        let window = copyAXElement(appElement, kAXFocusedWindowAttribute as String)
+            ?? copyAXElement(appElement, kAXMainWindowAttribute as String)
+
+        // kAXDocumentAttribute on the window returns the current page URL in most browsers
+        if let w = window,
+           let doc = copyString(w, kAXDocumentAttribute as String),
+           looksLikeURL(doc) {
+            return doc
+        }
+
+        // Fallback: scan toolbar text fields for something that looks like a URL
+        if let w = window, let url = urlFromAddressBar(w) {
+            return url
+        }
+
+        return ""
+    }
+
+    private static func urlFromAddressBar(_ window: AXUIElement) -> String? {
+        for toolbar in childElements(of: window, withRole: "AXToolbar") {
+            for field in childElements(of: toolbar, withRole: kAXTextFieldRole as String) {
+                if let value = copyString(field, kAXValueAttribute as String),
+                   looksLikeURL(value) {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func childElements(of element: AXUIElement, withRole role: String) -> [AXUIElement] {
+        (copyAXElementArray(element, kAXChildrenAttribute as String) ?? []).filter {
+            copyString($0, kAXRoleAttribute as String) == role
+        }
+    }
+
+    static func looksLikeURL(_ string: String) -> Bool {
+        string.hasPrefix("https://") || string.hasPrefix("http://")
     }
 
     // MARK: - Title resolution chain
@@ -153,13 +229,25 @@ enum AccessibilityWindowReader {
     }
 
     private static func titleFromElement(_ element: AXUIElement) -> String? {
-        let attributes = [
-            kAXTitleAttribute as String,
-            kAXDocumentAttribute as String,
-            kAXDescriptionAttribute as String,
-            kAXValueAttribute as String,
-        ]
-        for attribute in attributes {
+        // Direct title first
+        if let title = copyString(element, kAXTitleAttribute as String), !title.isEmpty {
+            return title
+        }
+
+        // AXDocument: native apps expose an open file as a file:// URL → extract filename.
+        // Skip raw http(s) URLs here — those are handled separately as browser URLs.
+        if let doc = copyString(element, kAXDocumentAttribute as String), !doc.isEmpty {
+            if doc.hasPrefix("file://"), let fileURL = URL(string: doc) {
+                let name = fileURL.lastPathComponent
+                return name.isEmpty ? nil : name
+            }
+            if !looksLikeURL(doc) {
+                return doc
+            }
+        }
+
+        // Fall through to description / value
+        for attribute in [kAXDescriptionAttribute as String, kAXValueAttribute as String] {
             if let value = copyString(element, attribute), !value.isEmpty {
                 return value
             }
@@ -227,6 +315,67 @@ enum AccessibilityWindowReader {
         }
 
         return candidates.max(by: { $0.score < $1.score })?.name ?? ""
+    }
+
+    // MARK: - Web area / Electron title extraction
+
+    /// For Electron and other web-based apps, the accessibility tree contains an AXWebArea
+    /// whose title maps to the HTML <title> tag, and AXHeading elements for visible headings.
+    private static func webAreaTitle(pid: pid_t) -> String {
+        let appEl = AXUIElementCreateApplication(pid)
+        let window = copyAXElement(appEl, kAXFocusedWindowAttribute as String)
+            ?? copyAXElement(appEl, kAXMainWindowAttribute as String)
+        guard let window else { return "" }
+
+        guard let webArea = findElement(withRole: "AXWebArea", in: window, maxDepth: 5) else {
+            return ""
+        }
+
+        // 1. AXTitle on the web area = HTML <title> tag (e.g. "My Conversation — Claude")
+        if let t = copyString(webArea, kAXTitleAttribute as String), !t.isEmpty {
+            return cleanWebTitle(t)
+        }
+
+        // 2. First AXHeading in the web content (e.g. conversation heading)
+        if let heading = findElement(withRole: "AXHeading", in: webArea, maxDepth: 8),
+           let t = firstMeaningfulText(heading), !t.isEmpty {
+            return t
+        }
+
+        return ""
+    }
+
+    /// Strip common app-name suffixes like " — Claude" or " | Notion" from page titles.
+    private static func cleanWebTitle(_ raw: String) -> String {
+        let separators = [" — ", " - ", " | ", " · "]
+        for sep in separators {
+            if let range = raw.range(of: sep) {
+                let prefix = String(raw[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+                if !prefix.isEmpty { return prefix }
+            }
+        }
+        return raw
+    }
+
+    private static func firstMeaningfulText(_ element: AXUIElement) -> String? {
+        for attr in [kAXValueAttribute as String, kAXTitleAttribute as String, kAXDescriptionAttribute as String] {
+            if let v = copyString(element, attr), v.count > 2 { return v }
+        }
+        return nil
+    }
+
+    /// BFS search for the first element matching a given role within maxDepth levels.
+    private static func findElement(withRole role: String, in root: AXUIElement, maxDepth: Int) -> AXUIElement? {
+        var queue: [(AXUIElement, Int)] = [(root, 0)]
+        while !queue.isEmpty {
+            let (el, depth) = queue.removeFirst()
+            if copyString(el, kAXRoleAttribute as String) == role { return el }
+            guard depth < maxDepth else { continue }
+            for child in copyAXElementArray(el, kAXChildrenAttribute as String) ?? [] {
+                queue.append((child, depth + 1))
+            }
+        }
+        return nil
     }
 
     // MARK: - AX helpers
