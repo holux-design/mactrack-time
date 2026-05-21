@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import SwiftData
@@ -36,6 +37,22 @@ final class TrackingEngine: ObservableObject {
                 guard let self, self.isTracking else { return }
                 self.handleFocusChange(self.focusTracker.currentWindow)
             }
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemSleep() }
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemWake() }
         }
     }
 
@@ -347,6 +364,23 @@ final class TrackingEngine: ObservableObject {
             return "Ambiguous"
         }
         return matched?.name
+    }
+
+    private func handleSystemSleep() {
+        guard isTracking else { return }
+        cancelPendingSwitch()
+        closeActiveSegment()
+        focusTracker.stop()
+        save()
+    }
+
+    private func handleSystemWake() {
+        guard isTracking else { return }
+        focusTracker.start()
+        let current = focusTracker.currentWindow
+        if !current.appName.isEmpty, !AppIdentity.isSelfApp(bundleIdentifier: current.bundleIdentifier) {
+            openSegment(for: current)
+        }
     }
 
     private func closeActiveSegment(at date: Date = Date()) {
