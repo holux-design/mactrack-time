@@ -10,6 +10,24 @@ struct SegmentRowView: View {
         return projects.first { $0.id == id }
     }
 
+    /// Human-readable subtitle: window title if available, otherwise URL domain.
+    private var subtitle: String? {
+        if !slice.segment.windowTitle.isEmpty { return slice.segment.windowTitle }
+        if !slice.segment.url.isEmpty,
+           let host = URL(string: slice.segment.url)?.host {
+            return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        }
+        return nil
+    }
+
+    /// Small URL tag shown when we have a URL but no window title.
+    private var urlDomain: String? {
+        guard slice.segment.windowTitle.isEmpty,
+              !slice.segment.url.isEmpty,
+              let host = URL(string: slice.segment.url)?.host else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             AppIconView(bundleIdentifier: slice.segment.bundleIdentifier, size: 24)
@@ -19,8 +37,8 @@ struct SegmentRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(slice.segment.appName)
                     .font(.subheadline.weight(.medium))
-                if !slice.segment.windowTitle.isEmpty {
-                    Text(slice.segment.windowTitle)
+                if let sub = subtitle {
+                    Text(sub)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
