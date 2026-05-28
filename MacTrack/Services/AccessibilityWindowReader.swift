@@ -87,6 +87,32 @@ enum AccessibilityWindowReader {
         browserBundleIDs.contains(bundleID)
     }
 
+    // MARK: - Known Electron / web-based apps (AXWebArea BFS is only worth attempting for these)
+
+    static let electronBundleIDs: Set<String> = [
+        "com.anthropic.claude",         // Claude
+        "com.notion.id",                // Notion
+        "com.tinyspeck.slackmacgap",    // Slack
+        "com.discord.Discord",          // Discord
+        "com.microsoft.teams",          // Teams (v1)
+        "com.microsoft.teams2",         // Teams (v2)
+        "com.github.GitHubDesktop",     // GitHub Desktop
+        "md.obsidian",                  // Obsidian
+        "com.figma.Desktop",            // Figma
+        "com.linear.linear",            // Linear
+        "com.spotify.client",           // Spotify
+        "com.microsoft.VSCode",         // VS Code
+        "com.todesktop.230313mzl4w4u92",// Cursor
+        "com.loom.desktop",             // Loom
+        "com.zulip.zulip",              // Zulip
+        "com.mattermost.desktop",       // Mattermost
+        "com.bitwarden.desktop",        // Bitwarden
+    ]
+
+    static func isElectronApp(bundleID: String) -> Bool {
+        electronBundleIDs.contains(bundleID)
+    }
+
     static func focusedWindow(for app: NSRunningApplication) -> FocusedWindowInfo {
         let appName = app.localizedName ?? ""
         let bundleID = app.bundleIdentifier ?? ""
@@ -105,8 +131,10 @@ enum AccessibilityWindowReader {
             url = extractBrowserURL(pid: pid)
         }
 
-        // For Electron/web apps with empty titles, try reading the web area title
-        if title.isEmpty, isTrusted {
+        // For known Electron/web apps with empty titles, try reading the AXWebArea title.
+        // Deliberately limited to the known-Electron allowlist — running a BFS over the
+        // full accessibility tree of arbitrary apps every second is too expensive.
+        if title.isEmpty, isTrusted, isElectronApp(bundleID: bundleID) {
             title = webAreaTitle(pid: pid)
         }
 
@@ -365,10 +393,13 @@ enum AccessibilityWindowReader {
     }
 
     /// BFS search for the first element matching a given role within maxDepth levels.
+    /// Uses an index cursor instead of removeFirst() to avoid O(n) array copies on each dequeue.
     private static func findElement(withRole role: String, in root: AXUIElement, maxDepth: Int) -> AXUIElement? {
         var queue: [(AXUIElement, Int)] = [(root, 0)]
-        while !queue.isEmpty {
-            let (el, depth) = queue.removeFirst()
+        var index = 0
+        while index < queue.count {
+            let (el, depth) = queue[index]
+            index += 1
             if copyString(el, kAXRoleAttribute as String) == role { return el }
             guard depth < maxDepth else { continue }
             for child in copyAXElementArray(el, kAXChildrenAttribute as String) ?? [] {
