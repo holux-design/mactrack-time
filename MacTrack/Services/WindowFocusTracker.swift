@@ -112,6 +112,7 @@ final class WindowFocusTracker: ObservableObject {
     }
 
     private func applyFocus(_ info: FocusedWindowInfo) {
+        guard info != currentWindow else { return }
         currentWindow = info
         onFocusChange?(info)
     }

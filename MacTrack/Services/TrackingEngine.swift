@@ -54,6 +54,22 @@ final class TrackingEngine: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.handleSystemWake() }
         }
+
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screensaver.didstart"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemSleep() }
+        }
+
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screensaver.didstop"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemWake() }
+        }
     }
 
     func start() {
